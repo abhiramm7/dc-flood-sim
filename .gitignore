@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# DEM rasters (large, regenerated from USGS)
+*.tif
+
+# Generated viewer artefacts (cached by webviz_server.py on startup)
+webviz/gauges.json
+webviz/fema_floodplain.geojson
+webviz/buildings.json
+webviz/roads.json
+webviz/basemap.png
+webviz/bridge.json
+
+# Quicklook PNGs
+*_preview.png
+
+# Editor / OS
+.DS_Store
+*.swp
+
+# HTTP caches from py3dep / rioxarray
+cache/

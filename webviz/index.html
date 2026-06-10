@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Washington DC — live flood sim (Potomac + Anacostia)</title>
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0c10; color: #e6e8eb;
+               font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI",
+                     "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
+  #pane-3d   { position: absolute; left: 0;     top: 0;
+               width: 60vw; height: 100vh; }
+  #pane-map  { position: absolute; left: 60vw;  top: 0;
+               width: 40vw; height: 100vh; background: #1c1f25; }
+  #pane-divider { position: absolute; left: 60vw; top: 0; height: 100vh;
+                  width: 1px; background: #2a2f36; z-index: 20; }
+  #canvas-wrap { position: absolute; inset: 0; }
+  canvas { display: block; }
+  /* Leaflet dark map tweaks */
+  .leaflet-container { background: #1a1d22; }
+  .map-attrib { position: absolute; bottom: 4px; right: 6px; z-index: 10;
+                font-size: 10px; color: #6c7682; }
+  .map-title  { position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+                z-index: 1000; color: #8b939d; font-size: 11px;
+                background: rgba(20,22,26,0.78); border: 1px solid #2a2f36;
+                border-radius: 6px; padding: 3px 10px;
+                backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #hud { position: absolute; top: 12px; left: 12px; z-index: 10;
+         background: rgba(20,22,26,0.78); border: 1px solid #2a2f36;
+         border-radius: 8px; padding: 12px 14px; min-width: 260px;
+         backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #hud h1 { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .4px;
+            color: #c9d1d9; }
+  #hud .subtitle { color: #8b939d; font-size: 11px; margin-bottom: 10px; }
+  #hud .stat { display: flex; justify-content: space-between; padding: 2px 0;
+               font-variant-numeric: tabular-nums; }
+  #hud .stat .k { color: #8b939d; }
+  #hud .stat .v { color: #e6edf3; }
+  #controls { position: absolute; bottom: 12px; left: 12px; z-index: 10;
+              background: rgba(20,22,26,0.78); border: 1px solid #2a2f36;
+              border-radius: 8px; padding: 10px 12px; width: 360px;
+              backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #controls label { display: block; margin: 6px 0 2px;
+                    color: #c9d1d9; font-size: 12px; }
+  #controls .row { display: flex; align-items: center; gap: 8px; }
+  #controls input[type=range] { flex: 1; }
+  #controls .badge { color: #8b939d; font-size: 11px; }
+  #controls .btn-row { margin-top: 10px; display: flex; gap: 6px; }
+  #controls button { flex: 1; background: #2d333b; color: #e6edf3; border: 1px solid #3b424c;
+                      border-radius: 5px; padding: 6px 8px; cursor: pointer; font-size: 12px; }
+  #controls button:hover { background: #383f48; }
+  #controls button.primary { background: #1f6feb; border-color: #1f6feb; }
+  #controls button.primary:hover { background: #2c7df0; }
+  #legend { position: absolute; top: 12px; right: 12px; z-index: 10;
+            background: rgba(20,22,26,0.78); border: 1px solid #2a2f36;
+            border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(8px); }
+  #legend .row { display: flex; align-items: center; gap: 8px; font-size: 11px;
+                 color: #8b939d; margin: 2px 0; }
+  #legend .swatch { width: 18px; height: 10px; border-radius: 2px; border: 1px solid #2a2f36; }
+  #help { position: absolute; bottom: 12px; right: 12px; z-index: 10; font-size: 11px;
+          color: #6c7682; background: rgba(20,22,26,0.78); border: 1px solid #2a2f36;
+          border-radius: 8px; padding: 8px 10px; }
+  #help kbd { background: #2d333b; border: 1px solid #3b424c; border-radius: 3px;
+              padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+              font-size: 10px; color: #c9d1d9; }
+  #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+            font-size: 11px; color: #8b939d; }
+  #status.connected { color: #3fb950; }
+  #status.error { color: #f85149; }
+</style>
+</head>
+<body>
+<div id="pane-3d">
+<div id="canvas-wrap"></div>
+
+<div id="hud">
+  <h1>Washington DC — live flood</h1>
+  <div class="subtitle">Potomac + Anacostia · 2D shallow-water on the Mac GPU</div>
+  <div class="stat"><span class="k">sim time</span><span class="v" id="s-time">— s</span></div>
+  <div class="stat"><span class="k">peak depth</span><span class="v" id="s-hmax">— m</span></div>
+  <div class="stat"><span class="k">volume</span><span class="v" id="s-vol">— m³</span></div>
+  <div class="stat"><span class="k">total inflow</span><span class="v" id="s-inflow">— m³/s</span></div>
+  <div class="stat"><span class="k">grid</span><span class="v" id="s-grid">—</span></div>
+  <div class="stat"><span class="k">net frame rate</span><span class="v" id="s-fps">— fps</span></div>
+  <div class="stat"><span class="k">gauges</span><span class="v" id="s-gauges">—</span></div>
+</div>
+
+<div id="legend">
+  <div class="row"><div class="swatch" style="background:linear-gradient(90deg,#0a4d8c,#79c8f2)"></div>simulated water</div>
+  <div class="row"><div class="swatch" style="background:linear-gradient(90deg,#2e5226,#9fa84e,#bca480,#f0ead8)"></div>terrain low → high</div>
+  <div class="row"><div class="swatch" style="background:#d97a4a;opacity:0.45"></div>FEMA 1% (100-yr) floodplain</div>
+  <div class="row"><div class="swatch" style="background:#ff5b35;opacity:0.55"></div>FEMA regulatory floodway</div>
+</div>
+
+<div id="controls">
+  <label>Potomac @ Little Falls: <span class="badge" id="potomac-label">3000 m³/s</span></label>
+  <div class="row"><input id="potomac" type="range" min="0" max="20000" step="50" value="3000"></div>
+  <label>Anacostia NW @ Brentwood: <span class="badge" id="anacostia_nw-label">400 m³/s</span></label>
+  <div class="row"><input id="anacostia_nw" type="range" min="0" max="3000" step="20" value="400"></div>
+  <label>Anacostia NE @ Riverdale: <span class="badge" id="anacostia_ne-label">400 m³/s</span></label>
+  <div class="row"><input id="anacostia_ne" type="range" min="0" max="3000" step="20" value="400"></div>
+  <label>Rock Creek: <span class="badge" id="rock_creek-label">50 m³/s</span></label>
+  <div class="row"><input id="rock_creek" type="range" min="0" max="500" step="5" value="50"></div>
+  <label>Water opacity: <span class="badge" id="alpha-label">0.85</span></label>
+  <div class="row">
+    <input id="alpha" type="range" min="0.10" max="1.0" step="0.05" value="0.85">
+  </div>
+  <div class="btn-row">
+    <button id="btn-pause">Pause</button>
+    <button id="btn-reset">Reset</button>
+    <button id="btn-flood" class="primary">100-yr Flood</button>
+  </div>
+</div>
+
+<div id="help">
+  <kbd>drag</kbd> orbit · <kbd>right-drag</kbd> pan · <kbd>scroll</kbd> zoom · <kbd>shift+click</kbd> rain
+</div>
+
+<div id="status">connecting…</div>
+</div>  <!-- /#pane-3d -->
+
+<div id="pane-divider"></div>
+<div id="pane-map">
+  <div class="map-title">2D flood map · CartoDB Positron</div>
+  <div class="map-attrib">tiles © OSM &amp; CARTO</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
