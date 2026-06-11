@@ -48,6 +48,17 @@ Scripts are numbered in run order.
 
 `flood_modeling_plan.md` is the full design doc — consult it for rationale.
 
+Extras (not numbered steps):
+
+- `webviz_server.py` + `webviz/` — live local viewer: Taichi solver on the Mac
+  GPU streaming to the browser over WebSocket. Needs this machine running.
+- `export_web_assets.py` + `docs/` — **shareable static site**: the same
+  local-inertial solver ported to WebGL2 fragment shaders (WebFlood-style),
+  runs entirely in the visitor's browser. Deploy via GitHub Pages from
+  `/docs`; see `docs/README.md`. Gotcha: three.js `ShaderMaterial` with
+  `glslVersion: GLSL3` does NOT provide `gl_FragColor`/`pc_fragColor` —
+  declare your own `out vec4` in fragment shaders.
+
 ## Conventions
 
 - All rasters in a **projected CRS in meters**: UTM Zone 18N = **EPSG:32618**.

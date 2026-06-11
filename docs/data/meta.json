@@ -1,0 +1,124 @@
+{
+ "nx": 1105,
+ "ny": 854,
+ "dx": 20.0,
+ "zmin": 0.0,
+ "zmax": 139.588,
+ "zscale": 0.0021299779391639882,
+ "west": -77.15505485305391,
+ "south": 38.79582887392547,
+ "east": -76.90481959373334,
+ "north": 38.95407676599481,
+ "manning": 0.035,
+ "source_dem": "dc_dem.tif",
+ "gauges": [
+  {
+   "id": "01646500",
+   "name": "Potomac @ Little Falls",
+   "role": "inflow",
+   "river": "potomac",
+   "lat": 38.9498,
+   "lon": -77.1276,
+   "i": 137,
+   "j": 848,
+   "elev_m": 12.89,
+   "default_cms": 3000.0,
+   "rect": [
+    135,
+    140,
+    846,
+    851
+   ]
+  },
+  {
+   "id": "01651003",
+   "name": "Anacostia NW Branch @ Brentwood",
+   "role": "inflow",
+   "river": "anacostia_nw",
+   "lat": 38.949,
+   "lon": -76.9562,
+   "i": 886,
+   "j": 830,
+   "elev_m": 3.73,
+   "default_cms": 400.0,
+   "rect": [
+    884,
+    889,
+    828,
+    833
+   ]
+  },
+  {
+   "id": "01649500",
+   "name": "Anacostia NE Branch @ Riverdale",
+   "role": "inflow",
+   "river": "anacostia_ne",
+   "lat": 38.9603,
+   "lon": -76.926,
+   "i": 1010,
+   "j": 849,
+   "elev_m": 6.07,
+   "default_cms": 400.0,
+   "rect": [
+    1008,
+    1013,
+    847,
+    852
+   ]
+  },
+  {
+   "id": "01648000",
+   "name": "Rock Creek @ Sherrill Dr",
+   "role": "inflow",
+   "river": "rock_creek",
+   "lat": 38.9725,
+   "lon": -77.04,
+   "i": 526,
+   "j": 852,
+   "elev_m": 74.83,
+   "default_cms": 50.0,
+   "rect": [
+    524,
+    529,
+    850,
+    854
+   ]
+  },
+  {
+   "id": "01651760",
+   "name": "Anacostia @ Kenilworth",
+   "role": "stage",
+   "river": "anacostia",
+   "lat": 38.9092,
+   "lon": -76.9553,
+   "i": 879,
+   "j": 611,
+   "elev_m": 0.27,
+   "default_cms": 0.0
+  },
+  {
+   "id": "01651827",
+   "name": "Anacostia @ Buzzard Point",
+   "role": "stage",
+   "river": "anacostia",
+   "lat": 38.8652,
+   "lon": -77.0103,
+   "i": 640,
+   "j": 367,
+   "elev_m": 0.36,
+   "default_cms": 0.0
+  },
+  {
+   "id": "01652500",
+   "name": "Fourmile Run @ Alexandria",
+   "role": "stage",
+   "river": "potomac",
+   "lat": 38.8433,
+   "lon": -77.0859,
+   "i": 310,
+   "j": 256,
+   "elev_m": 11.7,
+   "default_cms": 0.0
+  }
+ ]
+}
