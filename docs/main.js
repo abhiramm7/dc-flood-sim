@@ -9,7 +9,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './vendor/N8AO.m.js';
-import { GPUFloodSim } from './sim.js?v=6';
+import { GPUFloodSim } from './sim.js?v=7';
 
 const state = {
   nx: 0, ny: 0, dx: 1,
@@ -62,7 +62,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(pane3d.clientWidth, pane3d.clientHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.72;
+renderer.toneMappingExposure = 1.0;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -237,11 +237,11 @@ const WATER_FS = /* glsl */`
     normal = normalize(normal +
       vec3(ripple * 0.20, 0.0, ripple * 0.20) * clamp(vDepth, 0.3, 1.0));
 
-    // Murky river water: green-brown when shallow, near-black when deep.
+    // Blue water, darkening with depth.
     float dN = clamp(vDepth / 6.0, 0.0, 1.0);
-    vec3 shallowMud = vec3(0.30, 0.30, 0.20);
-    vec3 deepWater  = vec3(0.04, 0.07, 0.08);
-    vec3 base = mix(shallowMud, deepWater, sqrt(dN));
+    vec3 shallowWater = vec3(0.16, 0.38, 0.48);
+    vec3 deepWater    = vec3(0.015, 0.07, 0.16);
+    vec3 base = mix(shallowWater, deepWater, sqrt(dN));
 
     float diff = max(dot(normal, sunDir), 0.0);
     vec3 view = normalize(viewerPos - vWorldPos);
@@ -519,6 +519,9 @@ n8ao.configuration.screenSpaceRadius = true;
 n8ao.configuration.aoRadius = 40;          // px
 n8ao.configuration.distanceFalloff = 1.0;
 n8ao.configuration.intensity = 5.0;
+// OutputPass does the final tonemap + sRGB — without this, the frame gets
+// gamma-corrected twice and everything washes out pale.
+n8ao.configuration.gammaCorrection = false;
 n8ao.setQualityMode('Medium');
 composer.addPass(n8ao);
 composer.addPass(new OutputPass());
