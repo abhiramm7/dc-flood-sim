@@ -205,7 +205,7 @@ def export_buildings(out_dir, z, dx, utm_xmin, utm_ymin, wgs_bbox,
     return len(recs)
 
 
-def export_basemap(out_dir, utm_xmin, utm_ymin, nx, ny, dx, zoom=14, scale=2):
+def export_basemap(out_dir, utm_xmin, utm_ymin, nx, ny, dx, zoom=15, scale=3):
     """Bake an aerial-imagery texture aligned to the solver grid: fetch Esri
     World Imagery web-mercator tiles, then resample per output pixel into the
     UTM grid. Written north-up (row 0 = north); three.js flipY puts v=0 at

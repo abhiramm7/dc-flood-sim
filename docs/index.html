@@ -100,6 +100,8 @@
   <div class="row"><input id="rock_creek" type="range" min="0" max="500" step="5" value="50"></div>
   <label>Sim speed: <span class="badge" id="speed-label">8 steps/frame</span></label>
   <div class="row"><input id="speed" type="range" min="0" max="24" step="1" value="8"></div>
+  <label>Sun elevation: <span class="badge" id="sun-label">28°</span></label>
+  <div class="row"><input id="sun" type="range" min="6" max="60" step="1" value="28"></div>
   <label>Water opacity: <span class="badge" id="alpha-label">0.85</span></label>
   <div class="row"><input id="alpha" type="range" min="0.10" max="1.0" step="0.05" value="0.85"></div>
   <div class="toggles">
@@ -140,10 +142,11 @@
 {
   "imports": {
     "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/",
+    "three/examples/jsm/": "https://unpkg.com/three@0.169.0/examples/jsm/"
   }
 }
 </script>
-<script type="module" src="./main.js?v=3"></script>
+<script type="module" src="./main.js?v=6"></script>
 </body>
 </html>

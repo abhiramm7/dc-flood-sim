@@ -5,7 +5,11 @@
 
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
-import { GPUFloodSim } from './sim.js?v=2';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { N8AOPass } from './vendor/N8AO.m.js';
+import { GPUFloodSim } from './sim.js?v=6';
 
 const state = {
   nx: 0, ny: 0, dx: 1,
@@ -57,14 +61,15 @@ const wrap = document.getElementById('canvas-wrap');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(pane3d.clientWidth, pane3d.clientHeight);
-renderer.setClearColor(0x0a0c10, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.72;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x0a0c10, 5, 14);
+scene.fog = new THREE.Fog(0x0a0c10, 6, 18);
 
 const camera = new THREE.PerspectiveCamera(
-  45, pane3d.clientWidth / pane3d.clientHeight, 0.0005, 12);
+  45, pane3d.clientWidth / pane3d.clientHeight, 0.0005, 20);
 camera.position.set(0.15, 1.05, 1.15);     // south of the city, looking north
 
 // Map-style navigation: left-drag pans the ground plane, right-drag rotates,
@@ -87,6 +92,7 @@ window.addEventListener('resize', () => {
   camera.aspect = pane3d.clientWidth / pane3d.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(pane3d.clientWidth, pane3d.clientHeight);
+  composer.setSize(pane3d.clientWidth, pane3d.clientHeight);
 });
 
 // ----------------------------------------------------------------------
@@ -158,7 +164,7 @@ const TERRAIN_FS = /* glsl */`
     vec3 albedo = mix(elevRamp(vBedZ), texture2D(satTex, vUv).rgb, useSat);
     // Imagery has its own baked shading — light it more gently.
     float lit = mix(0.35 + 0.85 * diff + 0.10 * skyFill,
-                    0.72 + 0.38 * diff, useSat);
+                    0.55 + 0.42 * diff, useSat);
     gl_FragColor = vec4(albedo * lit, 1.0);
   }
 `;
@@ -196,38 +202,66 @@ const WATER_FS = /* glsl */`
   uniform float alphaScale;
   uniform vec3 sunDir;
   uniform vec3 viewerPos;
-  uniform float zmin;
-  uniform float zRange;
+  uniform vec3 skyTint;
+  uniform sampler2D qTex;   // face discharge (m²/s) from the solver
+  uniform float time;
   varying vec2 vUv;
   varying float vDepth;
   varying float vSurfaceZ;
   varying vec3 vWorldPos;
 
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i),               hash(i + vec2(1., 0.)), f.x),
+               mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y);
+  }
+
   void main() {
     if (vDepth < 0.08) discard;
 
-    vec3 dpdx = dFdx(vWorldPos);
-    vec3 dpdy = dFdy(vWorldPos);
-    vec3 normal = normalize(cross(dpdy, dpdx));
+    vec3 dpdx_ = dFdx(vWorldPos);
+    vec3 dpdy_ = dFdy(vWorldPos);
+    vec3 normal = normalize(cross(dpdy_, dpdx_));
     if (normal.y < 0.0) normal = -normal;
 
-    float surfN = clamp((vSurfaceZ - zmin) / zRange, 0.0, 1.0);
-    vec3 deep    = vec3(0.04, 0.30, 0.55);
-    vec3 shallow = vec3(0.50, 0.82, 0.95);
-    vec3 base = mix(deep, shallow, surfN);
+    // Flow velocity from the sim's discharge field — ripples drift downstream.
+    vec2 q = texture2D(qTex, vUv).rg;
+    vec2 vel = q / max(vDepth, 0.3);
+    float speed = length(vel);
+    vec2 fuv = vUv * 700.0 - vel * time * 0.10;   // ~30 m ripple wavelength
+    float n1 = vnoise(fuv + vec2(0.0, time * 0.6));
+    float n2 = vnoise(fuv * 2.1 + vec2(time * 0.8, 0.0));
+    float ripple = (n1 * 0.65 + n2 * 0.35) - 0.5;
+    normal = normalize(normal +
+      vec3(ripple * 0.20, 0.0, ripple * 0.20) * clamp(vDepth, 0.3, 1.0));
+
+    // Murky river water: green-brown when shallow, near-black when deep.
+    float dN = clamp(vDepth / 6.0, 0.0, 1.0);
+    vec3 shallowMud = vec3(0.30, 0.30, 0.20);
+    vec3 deepWater  = vec3(0.04, 0.07, 0.08);
+    vec3 base = mix(shallowMud, deepWater, sqrt(dN));
 
     float diff = max(dot(normal, sunDir), 0.0);
     vec3 view = normalize(viewerPos - vWorldPos);
     vec3 H = normalize(sunDir + view);
-    float spec = pow(max(dot(normal, H), 0.0), 96.0);
+    float spec = pow(max(dot(normal, H), 0.0), 120.0);
+    vec3 color = base * (0.45 + 0.60 * diff);
+    color += vec3(1.0, 0.97, 0.90) * spec * 0.4;
 
-    vec3 color = base * (0.50 + 0.55 * diff);
-    color += vec3(0.95, 0.97, 1.0) * spec * 0.85;
-
+    // Grazing angles pick up the sky.
     float fres = pow(1.0 - max(dot(normal, view), 0.0), 4.0);
-    color += vec3(0.30, 0.50, 0.65) * fres * 0.20;
+    color = mix(color, skyTint * 0.7, fres * 0.45);
 
-    float a = smoothstep(0.05, 1.0, vDepth) * alphaScale;
+    // Foam at the wetting front and where the flow is fast.
+    float edge = smoothstep(0.08, 0.13, vDepth) * (1.0 - smoothstep(0.13, 0.5, vDepth));
+    float rapids = smoothstep(3.0, 6.0, speed);
+    float foam = clamp(edge * 0.7 + rapids * 0.35, 0.0, 1.0) * (0.55 + 0.45 * n2);
+    color = mix(color, vec3(0.82, 0.85, 0.84), foam * 0.4);
+
+    float a = smoothstep(0.03, 0.4, vDepth) * alphaScale;
+    a = max(a, foam * 0.5 * alphaScale);
     gl_FragColor = vec4(color, a);
   }
 `;
@@ -314,12 +348,14 @@ function buildScene() {
   const wUniforms = {
     zTex:       { value: sim.zTexture },
     hTex:       { value: sim.hTexture },
+    qTex:       { value: sim.qTexture },
     zmin:       { value: state.zmin },
-    zRange:     { value: state.zRange },
     vScale:     { value: state.worldScale },
     alphaScale: { value: state.alphaScale },
     sunDir:     { value: SUN.clone() },
+    skyTint:    { value: new THREE.Color(0xd9b083) },
     viewerPos:  { value: new THREE.Vector3() },
+    time:       { value: 0 },
   };
   state.waterMat = new THREE.ShaderMaterial({
     uniforms: wUniforms,
@@ -339,6 +375,7 @@ function loadBasemap() {
   new THREE.TextureLoader().load('data/basemap.jpg', (tex) => {
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     state.satTex = tex;
     if (state.terrainMat) {
@@ -370,11 +407,26 @@ async function loadBuildings() {
   if (!n) return;
   const geom = new THREE.BoxGeometry(1, 1, 1);
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x969da6, roughness: 0.85, metalness: 0.05,
+    color: 0xffffff, roughness: 0.85, metalness: 0.05,
   });
   const mesh = new THREE.InstancedMesh(geom, mat, n);
   mesh.frustumCulled = false;          // instances span the whole domain
   mesh.renderOrder = 1;                // after terrain, before water blend
+  // Per-instance color: muted facade tones, hash-varied shade, taller
+  // buildings tinted toward glass blue.
+  const palette = [0x80868e, 0x8e887d, 0x757c84, 0x8a8278, 0x7d8584]
+    .map(c => new THREE.Color(c));
+  const glass = new THREE.Color(0x7f98ad);
+  const col = new THREE.Color();
+  for (let k = 0; k < n; k++) {
+    const h1 = ((k * 2654435761) >>> 0) % 1000 / 1000;
+    col.copy(palette[Math.floor(h1 * palette.length)]);
+    col.multiplyScalar(0.82 + 0.30 * (((k * 1597334677) >>> 0) % 1000 / 1000));
+    const hgt = rec[7 * k + 6];
+    if (hgt > 35) col.lerp(glass, Math.min((hgt - 35) / 60, 0.55));
+    mesh.setColorAt(k, col);
+  }
+  mesh.instanceColor.needsUpdate = true;
   state.buildings = { mesh, rec, n };
   updateBuildingMatrices();
   scene.add(mesh);
@@ -413,11 +465,100 @@ function updateBuildingMatrices() {
   b.mesh.instanceMatrix.needsUpdate = true;
 }
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-const _sun = new THREE.DirectionalLight(0xfff2d8, 1.0);
-_sun.position.set(SUN.x * 4, SUN.y * 4, SUN.z * 4);
-scene.add(_sun);
-scene.add(new THREE.HemisphereLight(0xb6cce3, 0x4a4032, 0.40));
+// ----------------------------------------------------------------------
+// Sky, lights, post-processing (AO + tone mapping)
+// ----------------------------------------------------------------------
+const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+scene.add(ambient);
+const sunLight = new THREE.DirectionalLight(0xfff2d8, 1.2);
+scene.add(sunLight);
+const hemi = new THREE.HemisphereLight(0xb6cce3, 0x4a4032, 0.40);
+scene.add(hemi);
+
+// Gradient sky dome with a sun glow — hand-tuned, plays nicely with ACES.
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: {
+    zenith:    { value: new THREE.Color(0.30, 0.47, 0.70) },
+    horizon:   { value: new THREE.Color(0.82, 0.80, 0.74) },
+    sunDirSky: { value: new THREE.Vector3(0, 1, 0) },
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec3 vDir;
+    uniform vec3 zenith;
+    uniform vec3 horizon;
+    uniform vec3 sunDirSky;
+    void main() {
+      vec3 d = normalize(vDir);
+      float h = clamp(d.y, 0.0, 1.0);
+      vec3 c = mix(horizon, zenith, pow(h, 0.28));
+      float cosSun = max(dot(d, sunDirSky), 0.0);
+      c += vec3(1.0, 0.85, 0.60) * pow(cosSun, 16.0) * 0.35;   // haze glow
+      c += vec3(1.0, 0.95, 0.85) * smoothstep(0.9991, 0.9997, cosSun) * 2.0;
+      gl_FragColor = vec4(c, 1.0);
+    }
+  `,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 16), skyMat);
+sky.frustumCulled = false;
+sky.renderOrder = -1;
+scene.add(sky);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const n8ao = new N8AOPass(scene, camera, pane3d.clientWidth, pane3d.clientHeight);
+n8ao.configuration.screenSpaceRadius = true;
+n8ao.configuration.aoRadius = 40;          // px
+n8ao.configuration.distanceFalloff = 1.0;
+n8ao.configuration.intensity = 5.0;
+n8ao.setQualityMode('Medium');
+composer.addPass(n8ao);
+composer.addPass(new OutputPass());
+state.n8ao = n8ao;
+state.composer = composer;
+
+// Sun elevation drives the sky model, the lights, the shader sun vector,
+// and the fog/sky tints (warm dusk at low angles, pale blue at noon).
+const DUSK_FOG = new THREE.Color(0xc89a6e);
+const DAY_FOG = new THREE.Color(0xc3d2e2);
+const DUSK_SKYTINT = new THREE.Color(0xc99a6e);
+const DAY_SKYTINT = new THREE.Color(0x7397b8);
+function setSun(elevDeg) {
+  const az = THREE.MathUtils.degToRad(215);          // SW
+  const el = THREE.MathUtils.degToRad(elevDeg);
+  // world: +x = east, north = -z
+  const sd = new THREE.Vector3(
+    Math.sin(az) * Math.cos(el),
+    Math.sin(el),
+    -Math.cos(az) * Math.cos(el),
+  ).normalize();
+  skyMat.uniforms.sunDirSky.value.copy(sd);
+  sunLight.position.copy(sd).multiplyScalar(4);
+  const t = THREE.MathUtils.clamp((elevDeg - 6) / 44, 0, 1);
+  skyMat.uniforms.zenith.value.lerpColors(
+    new THREE.Color(0.22, 0.28, 0.46), new THREE.Color(0.26, 0.44, 0.72), t);
+  skyMat.uniforms.horizon.value.lerpColors(
+    new THREE.Color(0.93, 0.64, 0.42), new THREE.Color(0.60, 0.69, 0.78), t);
+  sunLight.color.setHSL(0.085, 0.55 * (1 - t), 0.62 + 0.3 * t);
+  sunLight.intensity = 0.9 + 0.7 * t;
+  ambient.intensity = 0.20 + 0.15 * t;
+  hemi.intensity = 0.18 + 0.22 * t;
+  scene.fog.color.lerpColors(DUSK_FOG, DAY_FOG, t);
+  if (state.terrainMat) state.terrainMat.uniforms.sunDir.value.copy(sd);
+  if (state.waterMat) {
+    state.waterMat.uniforms.sunDir.value.copy(sd);
+    state.waterMat.uniforms.skyTint.value.lerpColors(DUSK_SKYTINT, DAY_SKYTINT, t);
+  }
+  state.sunDir = sd;
+}
 
 // ----------------------------------------------------------------------
 // UI bindings
@@ -438,6 +579,12 @@ function setupUI() {
   bindRiverSlider('anacostia_nw', 'anacostia_nw', 'anacostia_nw-label');
   bindRiverSlider('anacostia_ne', 'anacostia_ne', 'anacostia_ne-label');
   bindRiverSlider('rock_creek',   'rock_creek',   'rock_creek-label');
+
+  document.getElementById('sun').addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    document.getElementById('sun-label').textContent = `${v.toFixed(0)}°`;
+    setSun(v);
+  });
 
   document.getElementById('alpha').addEventListener('input', (e) => {
     state.alphaScale = parseFloat(e.target.value);
@@ -652,10 +799,12 @@ function tick(now) {
     }
     if (state.waterMat) {
       state.waterMat.uniforms.hTex.value = sim.hTexture;
+      state.waterMat.uniforms.qTex.value = sim.qTexture;
       state.waterMat.uniforms.viewerPos.value.copy(camera.position);
+      state.waterMat.uniforms.time.value = now / 1000;
     }
   }
-  renderer.render(scene, camera);
+  composer.render();
 
   state.framesSinceLog++;
   const dtLog = now - state.lastFpsLog;
@@ -704,6 +853,7 @@ async function boot() {
 
   buildScene();
   setupUI();
+  setSun(28);
   loadBasemap();
   document.getElementById('loading').style.display = 'none';
 

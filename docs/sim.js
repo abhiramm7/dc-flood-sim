@@ -225,8 +225,9 @@ export class GPUFloodSim {
                 floatTarget(nx, ny, THREE.RedFormat)];
     this.qRT = [floatTarget(nx + 1, ny + 1, THREE.RGFormat),
                 floatTarget(nx + 1, ny + 1, THREE.RGFormat)];
-    // Water rendering samples h with uv — give it a friendly filter.
-    for (const rt of this.hRT) {
+    // Rendering samples h and q with uv — give them a friendly filter
+    // (the sim itself uses texelFetch, which ignores filtering).
+    for (const rt of [...this.hRT, ...this.qRT]) {
       rt.texture.minFilter = filt; rt.texture.magFilter = filt;
     }
     this.hPing = 0; this.qPing = 0;
@@ -281,6 +282,7 @@ export class GPUFloodSim {
   }
 
   get hTexture() { return this.hRT[this.hPing].texture; }
+  get qTexture() { return this.qRT[this.qPing].texture; }
   get zTexture() { return this.zTex; }
 
   _runPass(material, target) {
