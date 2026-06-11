@@ -1,50 +1,46 @@
-# DC Flood Sim — shareable static site
+# The shareable site
 
-Everything in this folder is a **fully static website**: the 2D shallow-water
-solver (the same local-inertial scheme as `03_solver_swe.py`) runs in WebGL2
-fragment shaders on the *viewer's* GPU, WebFlood-style
-(https://aeplay.github.io/WebFlood/). No Python, no server, no install —
-anyone with the link gets the live simulation.
+This folder is a complete static website. The shallow-water solver (the
+same local-inertial scheme as `03_solver_swe.py`) runs in WebGL2 fragment
+shaders on the visitor's GPU, an approach borrowed from
+[WebFlood](https://aeplay.github.io/WebFlood/). There is no backend. Anyone
+with the link gets the live simulation.
 
-The 3D scene is the whole show: satellite imagery draped on the USGS
-topobathy DEM at **true vertical scale**, ~236k OSM buildings, and the live
-flood surface. Navigation is map-style — drag to pan, right-drag to rotate,
-scroll zooms toward the cursor down to street level, arrow keys pan.
+The 3D scene carries the whole interface: satellite imagery draped over the
+USGS DEM at true vertical scale, ~236k OSM buildings, and the simulated
+water surface. Navigation works like a map app. Drag to pan, right-drag to
+rotate, scroll to zoom toward the cursor (down to street level), arrow keys
+to move.
 
-On load the site fetches **live USGS NWIS data**: current tidal stage
-(gauges 01647600/01651827, NAVD88) sets the initial river level via a
-connectivity flood-fill, and the four inflow sliders preset to the rivers'
-current discharges (re-polled every 10 min). Offline it falls back to
-defaults.
+On load the page calls USGS NWIS for current conditions. The tidal stage
+(gauges 01647600 and 01651827, NAVD88) sets the initial river level through
+a connectivity flood-fill, and the four inflow sliders preset to whatever
+the rivers are doing right now. It re-polls every 10 minutes and falls back
+to defaults when offline.
 
 ## Files
 
 | File | What |
 |---|---|
-| `index.html` | UI shell (HUD, sliders, legend) |
-| `main.js` | 3D rendering (Three.js), navigation, USGS NWIS polling |
-| `sim.js` | The GPU solver: ping-pong float textures, flux/mass/diagnostic passes |
-| `data/dem_z.u16.gz` | Baked DEM (1105×854 @ 20 m, uint16-quantized, ~2 mm steps) |
-| `data/meta.json` | Grid dims, WGS84 bounds, USGS gauges + inflow cells |
-| `data/basemap.jpg` | Esri World Imagery resampled onto the grid (terrain drape) |
-| `data/buildings.f32.gz` | 3D city: OSM footprints as oriented boxes (7 × f32 each), one `InstancedMesh` |
-| `data/fema_floodplain.geojson.gz` | FEMA NFHL polygons (kept for future overlay use) |
+| `index.html` | UI shell: HUD, sliders, legend |
+| `main.js` | 3D rendering (three.js), navigation, NWIS polling |
+| `sim.js` | the GPU solver: ping-pong float textures with flux, mass, and diagnostic passes |
+| `data/dem_z.u16.gz` | baked DEM, 1105×854 at 20 m, quantized to uint16 |
+| `data/meta.json` | grid dimensions, WGS84 bounds, gauges, inflow cells |
+| `data/basemap.jpg` | Esri World Imagery resampled onto the grid |
+| `data/buildings.f32.gz` | OSM footprints as oriented boxes, 7 floats each, drawn as one `InstancedMesh` |
+| `data/fema_floodplain.geojson.gz` | FEMA NFHL polygons (kept for a future overlay) |
 
-Regenerate the `data/` assets after changing the DEM or gauges:
+To regenerate the assets after changing the DEM or gauges, run
+`python export_web_assets.py` from the repo root (inside the venv).
+Buildings come from Overpass and the basemap from Esri's tile service; both
+are cached, so delete the file in `data/` when you want a fresh copy.
+Overpass tiles that time out get subdivided and retried automatically.
 
-```bash
-source .venv/bin/activate
-python export_web_assets.py          # run from the repo root
-```
-
-Buildings (Overpass) and the basemap (Esri tiles) are fetched over the
-network and cached — delete the file in `data/` to refetch, or pass
-`--skip-buildings`. Dense Overpass tiles are subdivided automatically on
-timeout.
-
-**Cache busting:** `index.html` loads `main.js?v=N` and `main.js` imports
-`sim.js?v=N`. Bump both `N`s whenever you edit the JS, or returning
-visitors (and CDNs) may run the old version.
+One habit to keep: `index.html` loads `main.js?v=N`, and `main.js` imports
+`sim.js?v=N`. Bump those numbers whenever you edit the JS. Browsers and
+CDNs cache ES modules aggressively, and returning visitors will otherwise
+run stale code.
 
 ## Preview locally
 
@@ -53,37 +49,32 @@ python3 -m http.server 8901 --directory docs
 # open http://localhost:8901/
 ```
 
-(A plain `file://` open won't work — ES modules and fetch need HTTP.)
+Opening `index.html` directly from the filesystem won't work; ES modules
+and `fetch` need an HTTP server.
 
-## Host it as a public website
+## Hosting
 
-**GitHub Pages (free, simplest):**
-1. Push this repo to GitHub.
-2. Repo **Settings → Pages → Build and deployment**:
-   source *Deploy from a branch*, branch `main`, folder `/docs`.
-3. Live in ~1 minute at `https://<your-username>.github.io/<repo-name>/`.
+The site is live at https://abhiramm7.github.io/dc-flood-sim/ via GitHub
+Pages (Settings → Pages → deploy from branch, `main`, `/docs`).
 
-**Alternatives** (all free tiers, all work unchanged):
-- **Cloudflare Pages / Netlify / Vercel** — connect the repo, set the
-  publish directory to `docs/`. Better CDN + custom-domain ergonomics.
-- **Netlify Drop** (drag-and-drop the `docs/` folder, no git needed).
-- Any S3/GCS-style static bucket behind a CDN.
-
-The `.gz` assets are decompressed in the browser, so no special server
-configuration is needed anywhere. Total payload ≈ 10 MB on first load.
+It works unchanged on any static host. Cloudflare Pages, Netlify, and
+Vercel just need the publish directory set to `docs/`. Netlify Drop takes a
+drag-and-dropped folder if you don't want git involved. The `.gz` assets
+are decompressed in the browser, so no server configuration is needed
+anywhere. First load is about 10 MB.
 
 ## Browser requirements
 
-WebGL2 with `EXT_color_buffer_float` — all current Chrome, Edge, Firefox,
-Safari 16+. A clear error message is shown if missing.
+WebGL2 with the `EXT_color_buffer_float` extension, which means any current
+Chrome, Edge, Firefox, or Safari 16+. The page shows an error message if
+either is missing.
 
 ## Caveats
 
-- Research/education grade, **not** a regulatory flood product. The
-  validation step (driving a historical USGS event and comparing modeled
-  stage to the gauge record) has not been run on this port.
-- Buildings are visual only — they don't block flow in the solver (the DEM
-  is bare-earth).
-- Steady inflows at four gauges; free critical-flow weir outflow at the
-  domain edges. Results are only as good as those boundary conditions.
-- Single-precision solver (same as the Taichi/Metal original).
+- Research and education grade, not a regulatory product. The validation
+  step (a historical event driven through the model and compared to the
+  gauge record) hasn't been run on this port.
+- Buildings don't block flow; the solver sees bare earth.
+- Steady inflows at four gauges, free weir outflow at the edges. The
+  results are only as good as those boundary conditions.
+- Single precision, same as the Taichi/Metal original.
