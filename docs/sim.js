@@ -305,12 +305,16 @@ export class GPUFloodSim {
 
   _rebuildSources() {
     this.srcData.fill(0);
+    this.maxSrcRate = 0;
     for (const { rect, cms } of Object.values(this.inflows)) {
       const [i0, i1, j0, j1] = rect;
       const nCells = Math.max(1, (i1 - i0) * (j1 - j0));
       const rate = cms / (nCells * this.cellArea);   // m/s of depth per cell
       for (let j = j0; j < j1; j++) {
-        for (let i = i0; i < i1; i++) this.srcData[j * this.nx + i] += rate;
+        for (let i = i0; i < i1; i++) {
+          const v = this.srcData[j * this.nx + i] += rate;
+          if (v > this.maxSrcRate) this.maxSrcRate = v;
+        }
       }
     }
     this.srcTex.needsUpdate = true;
@@ -389,6 +393,11 @@ export class GPUFloodSim {
       this._runPass(this.hMat, this.hRT[1 - this.hPing]);
       this.hPing = 1 - this.hPing;
       this.simTime += dt;
+      // Diagnostics only refresh hmaxEst every ~250 ms, but with large
+      // inflows the depth can outgrow the stale estimate within that gap
+      // and break the CFL bound (NaN → reset loop). Grow the estimate
+      // pessimistically by the injection rate; readDiagnostics corrects it.
+      this.hmaxEst += dt * (this.maxSrcRate || 0);
     }
   }
 

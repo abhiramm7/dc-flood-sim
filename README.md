@@ -8,10 +8,19 @@ city comes from OpenStreetMap, and the river inflows are pulled live from
 USGS gauges. The whole thing is a static web page, so it costs nothing to
 host and nothing to share.
 
-![100-year flood scenario over Washington DC](docs/screenshot.jpg)
-*A simulated 100-yr flood (about 14,650 m³/s combined inflow) after several
-hours of simulated time. National Airport and the Mall are underwater.
-Everything in this picture was computed in the browser.*
+<p>
+  <img src="docs/screenshot.jpg" alt="100-year flood scenario over Washington DC" width="73%">
+  <img src="docs/screenshot_mobile.jpg" alt="The sim on a phone, controls folded away" width="22.5%">
+</p>
+
+*Left: a simulated 100-yr flood (about 14,650 m³/s combined inflow) a few
+hours in. The channel runs dark blue; the lighter cyan is shallow water
+spreading over streets, so the color doubles as a depth map. The boxes
+standing in the water are OSM buildings. Right: the same thing on a phone,
+where the controls fold into a bottom sheet and two fingers fly the camera.
+Both views are computed live in the browser. Opening
+[the demo with `?flood=1`](https://abhiramm7.github.io/dc-flood-sim/?flood=1)
+starts this scenario directly.*
 
 ## Why
 

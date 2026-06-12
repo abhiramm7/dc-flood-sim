@@ -9,7 +9,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './vendor/N8AO.m.js';
-import { GPUFloodSim } from './sim.js?v=8';
+import { GPUFloodSim } from './sim.js?v=14';
 
 const state = {
   nx: 0, ny: 0, dx: 1,
@@ -756,6 +756,12 @@ function computeBaseDepth(z, nx, ny, wse, seeds) {
 
 async function applyUSGSBaseline(meta, z) {
   const statEl = document.getElementById('s-usgs');
+  if (state.scenarioLock) {
+    // ?flood=1 runs a fixed scenario — don't reset the sim to the live
+    // baseline or override the sliders mid-event.
+    statEl.textContent = 'scenario mode — live data paused';
+    return;
+  }
   let usgs = null;
   try {
     usgs = await fetchUSGS(meta);
@@ -763,7 +769,7 @@ async function applyUSGSBaseline(meta, z) {
     console.warn('[usgs] live fetch failed:', e.message);
   }
 
-  const liveGauges = usgs ? applyLiveFlows(meta, usgs) : 0;
+  const liveGauges = (usgs && !state.scenarioLock) ? applyLiveFlows(meta, usgs) : 0;
 
   // Tidal stage → base water-surface elevation (NAVD88 m).
   let wse = 0.6;
@@ -789,6 +795,7 @@ async function applyUSGSBaseline(meta, z) {
 
   // Keep the inflows tracking the river: re-poll NWIS periodically.
   setInterval(async () => {
+    if (state.scenarioLock) return;
     try {
       const fresh = await fetchUSGS(meta);
       const n = applyLiveFlows(meta, fresh);
@@ -889,6 +896,20 @@ async function boot() {
   setSun(28);
   loadBasemap();
   document.getElementById('loading').style.display = 'none';
+
+  // Shareable scenario link: ?flood=1 starts the 100-yr event on load
+  // (and stops the live USGS baseline/poll from resetting the scenario).
+  // Must run BEFORE applyUSGSBaseline so the lock is set when it checks.
+  const params = new URLSearchParams(location.search);
+  if (params.has('flood')) {
+    state.scenarioLock = true;
+    document.getElementById('btn-flood').click();
+  }
+  if (params.has('fast')) state.subSteps = 24;
+  // ?prerun=N advances the solver N sub-steps synchronously at boot —
+  // mainly for screenshots/embeds that want a developed flood on frame one.
+  const prerun = Math.min(parseInt(params.get('prerun') || '0', 10), 100000);
+  for (let k = 0; k < prerun; k += 50) state.sim.step(50);
 
   // Base water level + live inflows from USGS (async; falls back silently).
   applyUSGSBaseline(meta, z).catch(e => console.warn('[usgs]', e));
