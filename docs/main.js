@@ -9,7 +9,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './vendor/N8AO.m.js';
-import { GPUFloodSim } from './sim.js?v=15';
+import { GPUFloodSim } from './sim.js?v=16';
 
 const state = {
   nx: 0, ny: 0, dx: 1,
@@ -189,9 +189,11 @@ const WATER_VS = /* glsl */`
     float h  = max(texture2D(hTex, uv).r, 0.0);
     float zw = zb + h;
     vDepth = h;
-    // Blend dry vertices onto the terrain and wet vertices onto the water
-    // surface so shorelines don't form vertical cliffs.
-    float blend = smoothstep(0.1, 1.5, h);
+    // Blend dry vertices onto the terrain right at the wetting front so
+    // shorelines don't form vertical cliffs. Keep the band narrow: a wide
+    // band pulls the surface down over submerged bumps (treelines, levees)
+    // and the terrain pokes through as dark blotches.
+    float blend = smoothstep(0.05, 0.30, h);
     float yEff = mix(zb, zw, blend);
     vSurfaceZ = yEff;
     float y = (yEff - zmin) * vScale;
@@ -287,46 +289,54 @@ function buildScene() {
   const cx = 0.5 * worldW * s;
   const cy = 0.5 * worldH * s;
 
-  const step = Math.max(1, Math.round(Math.max(nx, ny) / 700));
-  const nvx = Math.floor((nx - 1) / step) + 1;
-  const nvy = Math.floor((ny - 1) / step) + 1;
+  // Flat XZ grid; Y comes from the textures in the vertex shaders.
+  const makeGrid = (step) => {
+    const nvx = Math.floor((nx - 1) / step) + 1;
+    const nvy = Math.floor((ny - 1) / step) + 1;
+    const nv = nvx * nvy;
+    const positions = new Float32Array(nv * 3);
+    const uvs = new Float32Array(nv * 2);
+    for (let vi = 0; vi < nvx; vi++) {
+      const i = Math.min(vi * step, nx - 1);
+      const x = i * dx * s - cx;
+      const u = i / (nx - 1);
+      for (let vj = 0; vj < nvy; vj++) {
+        const j = Math.min(vj * step, ny - 1);
+        const idx = vi * nvy + vj;
+        positions[3 * idx + 0] = x;
+        positions[3 * idx + 1] = 0;
+        // Right-handed world: +x = east, +y = up, NORTH = -z (else the map
+        // renders mirrored east-west).
+        positions[3 * idx + 2] = cy - j * dx * s;
+        uvs[2 * idx + 0] = u;
+        uvs[2 * idx + 1] = j / (ny - 1);
+      }
+    }
+    const nq = (nvx - 1) * (nvy - 1);
+    const indices = new (nv > 65535 ? Uint32Array : Uint16Array)(nq * 6);
+    let k = 0;
+    for (let i = 0; i < nvx - 1; i++) {
+      for (let j = 0; j < nvy - 1; j++) {
+        const v00 = i * nvy + j;
+        const v10 = (i + 1) * nvy + j;
+        const v01 = i * nvy + (j + 1);
+        const v11 = (i + 1) * nvy + (j + 1);
+        indices[k++] = v00; indices[k++] = v10; indices[k++] = v11;
+        indices[k++] = v00; indices[k++] = v11; indices[k++] = v01;
+      }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(new THREE.BufferAttribute(indices, 1));
+    return geom;
+  };
 
-  const nv = nvx * nvy;
-  const positions = new Float32Array(nv * 3);
-  const uvs = new Float32Array(nv * 2);
-  for (let vi = 0; vi < nvx; vi++) {
-    const i = Math.min(vi * step, nx - 1);
-    const x = i * dx * s - cx;
-    const u = i / (nx - 1);
-    for (let vj = 0; vj < nvy; vj++) {
-      const j = Math.min(vj * step, ny - 1);
-      const idx = vi * nvy + vj;
-      positions[3 * idx + 0] = x;
-      positions[3 * idx + 1] = 0;
-      // Right-handed world: +x = east, +y = up, NORTH = -z (else the map
-      // renders mirrored east-west).
-      positions[3 * idx + 2] = cy - j * dx * s;
-      uvs[2 * idx + 0] = u;
-      uvs[2 * idx + 1] = j / (ny - 1);
-    }
-  }
-  const nq = (nvx - 1) * (nvy - 1);
-  const indices = new (nv > 65535 ? Uint32Array : Uint16Array)(nq * 6);
-  let k = 0;
-  for (let i = 0; i < nvx - 1; i++) {
-    for (let j = 0; j < nvy - 1; j++) {
-      const v00 = i * nvy + j;
-      const v10 = (i + 1) * nvy + j;
-      const v01 = i * nvy + (j + 1);
-      const v11 = (i + 1) * nvy + (j + 1);
-      indices[k++] = v00; indices[k++] = v10; indices[k++] = v11;
-      indices[k++] = v00; indices[k++] = v11; indices[k++] = v01;
-    }
-  }
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geom.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
-  geom.setIndex(new THREE.BufferAttribute(indices, 1));
+  // Terrain can be decimated (per-pixel hillshade hides it); the water mesh
+  // follows the sim grid exactly, otherwise the wetting-front blend gets
+  // interpolated across coarse cells and submerged bumps punch through.
+  const step = Math.max(1, Math.round(Math.max(nx, ny) / 700));
+  const geom = makeGrid(step);
 
   const tUniforms = {
     zTex:    { value: sim.zTexture },
@@ -348,10 +358,7 @@ function buildScene() {
   state.terrainMesh = new THREE.Mesh(geom, state.terrainMat);
   scene.add(state.terrainMesh);
 
-  const wGeom = new THREE.BufferGeometry();
-  wGeom.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
-  wGeom.setAttribute('uv',       new THREE.BufferAttribute(uvs.slice(), 2));
-  wGeom.setIndex(geom.getIndex());
+  const wGeom = makeGrid(IS_MOBILE ? step : 1);
   const wUniforms = {
     zTex:       { value: sim.zTexture },
     hTex:       { value: sim.hTexture },
