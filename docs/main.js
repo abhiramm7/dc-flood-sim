@@ -9,7 +9,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './vendor/N8AO.m.js';
-import { GPUFloodSim } from './sim.js?v=7';
+import { GPUFloodSim } from './sim.js?v=8';
 
 const state = {
   nx: 0, ny: 0, dx: 1,
@@ -58,8 +58,13 @@ async function fetchBinary(url) {
 // ----------------------------------------------------------------------
 const pane3d = document.getElementById('pane-3d');
 const wrap = document.getElementById('canvas-wrap');
+// Phones get lighter defaults: lower resolution cap, cheaper AO, fewer
+// solver sub-steps per frame.
+const IS_MOBILE = (navigator.maxTouchPoints > 1 &&
+                   matchMedia('(max-width: 1024px)').matches) ||
+                  /Mobi|Android|iPhone/i.test(navigator.userAgent);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE ? 1.5 : 2));
 renderer.setSize(pane3d.clientWidth, pane3d.clientHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -522,7 +527,7 @@ n8ao.configuration.intensity = 5.0;
 // OutputPass does the final tonemap + sRGB — without this, the frame gets
 // gamma-corrected twice and everything washes out pale.
 n8ao.configuration.gammaCorrection = false;
-n8ao.setQualityMode('Medium');
+n8ao.setQualityMode(IS_MOBILE ? 'Performance' : 'Medium');
 composer.addPass(n8ao);
 composer.addPass(new OutputPass());
 state.n8ao = n8ao;
@@ -578,6 +583,24 @@ function bindRiverSlider(domId, river, labelId) {
 }
 
 function setupUI() {
+  // Collapsible control panel (phones start collapsed; button in CSS only
+  // shows on small screens).
+  const panel = document.getElementById('controls');
+  if (IS_MOBILE && matchMedia('(max-width: 700px)').matches) {
+    panel.classList.add('collapsed');
+  }
+  document.getElementById('controls-toggle').addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+  });
+
+  if (IS_MOBILE) {
+    state.subSteps = 5;
+    const speedEl = document.getElementById('speed');
+    speedEl.value = state.subSteps;
+    document.getElementById('speed-label').textContent =
+      `${state.subSteps} steps/frame`;
+  }
+
   bindRiverSlider('potomac',      'potomac',      'potomac-label');
   bindRiverSlider('anacostia_nw', 'anacostia_nw', 'anacostia_nw-label');
   bindRiverSlider('anacostia_ne', 'anacostia_ne', 'anacostia_ne-label');
@@ -629,14 +652,15 @@ function setupUI() {
     state.sliderApply.rock_creek?.(250);
   });
 
-  // Shift-click rain (raycast against the terrain; world XZ → cell indices)
+  // Rain splash: shift+click (desktop) or double-tap (touch). Raycast
+  // against the terrain; world XZ → cell indices.
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
-  renderer.domElement.addEventListener('click', (e) => {
-    if (!e.shiftKey || !state.terrainMesh) return;
+  const splashAt = (clientX, clientY) => {
+    if (!state.terrainMesh) return;
     const rect = renderer.domElement.getBoundingClientRect();
-    ndc.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
-    ndc.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    ndc.x =  ((clientX - rect.left) / rect.width)  * 2 - 1;
+    ndc.y = -((clientY - rect.top)  / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
     const hits = raycaster.intersectObject(state.terrainMesh, false);
     if (!hits.length) return;
@@ -649,6 +673,12 @@ function setupUI() {
     const j = Math.round((cy - p.z) / (dx * s));
     if (i < 0 || i >= nx || j < 0 || j >= ny) return;
     state.sim.splash(i, j, Math.max(8, Math.floor(Math.min(nx, ny) / 40)), 2.0);
+  };
+  renderer.domElement.addEventListener('click', (e) => {
+    if (e.shiftKey) splashAt(e.clientX, e.clientY);
+  });
+  renderer.domElement.addEventListener('dblclick', (e) => {
+    splashAt(e.clientX, e.clientY);
   });
 }
 

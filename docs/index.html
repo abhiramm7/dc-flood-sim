@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
 <title>Washington DC — interactive flood sim (Potomac + Anacostia)</title>
 <meta name="description" content="2D shallow-water flood simulation of Washington DC running live on your GPU in the browser. USGS topobathy DEM, live USGS gauge inflows, 3D city from OSM." />
 <style>
-  html, body { margin: 0; height: 100%; background: #0a0c10; color: #e6e8eb;
+  html, body { margin: 0; height: 100%; height: 100dvh; background: #0a0c10;
+               color: #e6e8eb;
                font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI",
-                     "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
+                     "Helvetica Neue", Arial, sans-serif; overflow: hidden;
+               -webkit-tap-highlight-color: transparent; }
   #pane-3d   { position: absolute; inset: 0; }
   #canvas-wrap { position: absolute; inset: 0; }
   canvas { display: block; }
@@ -65,6 +67,30 @@
          transform: translate(-50%,-50%); z-index: 60; max-width: 480px;
          background: #2d1417; border: 1px solid #f85149; color: #ffb4ab;
          border-radius: 8px; padding: 14px 18px; font-size: 13px; }
+  #controls-toggle { display: none; position: absolute; bottom: 12px; left: 12px;
+                     z-index: 11; background: rgba(20,22,26,0.85); color: #e6edf3;
+                     border: 1px solid #3b424c; border-radius: 18px;
+                     padding: 8px 16px; font-size: 13px; cursor: pointer;
+                     backdrop-filter: blur(8px); }
+
+  /* ------------------------------ phones ------------------------------ */
+  @media (max-width: 700px) {
+    #legend, #help { display: none; }
+    #hud { right: 8px; left: 8px; top: 8px; min-width: 0;
+           padding: 8px 10px; font-size: 11px; }
+    #hud h1 { font-size: 12px; }
+    #hud .subtitle { font-size: 10px; margin-bottom: 4px; }
+    #hud .stat { padding: 1px 0; }
+    /* hide the least essential stats to keep the HUD short */
+    #hud .stat:nth-of-type(2), #hud .stat:nth-of-type(6),
+    #hud .stat:nth-of-type(7) { display: none; }
+    #controls-toggle { display: block; }
+    #controls { left: 8px; right: 8px; bottom: 56px; width: auto;
+                max-height: 52dvh; overflow-y: auto; padding: 8px 10px;
+                font-size: 12px; }
+    #controls.collapsed { display: none; }
+    #controls input[type=range] { height: 28px; }
+  }
 </style>
 </head>
 <body>
@@ -121,9 +147,11 @@
   </div>
 </div>
 
+<button id="controls-toggle">☰ Controls</button>
+
 <div id="help">
   <div><kbd>drag</kbd> pan · <kbd>right-drag</kbd> rotate · <kbd>scroll</kbd> zoom to cursor</div>
-  <div><kbd>arrows</kbd> move · <kbd>shift+click</kbd> rain</div>
+  <div><kbd>arrows</kbd> move · <kbd>shift+click</kbd>/<kbd>double-tap</kbd> rain</div>
   <div class="attrib">DEM: USGS · imagery: Esri · buildings: © OSM · flows/stage: USGS NWIS</div>
 </div>
 </div>  <!-- /#pane-3d -->
@@ -147,6 +175,6 @@
   }
 }
 </script>
-<script type="module" src="./main.js?v=7"></script>
+<script type="module" src="./main.js?v=8"></script>
 </body>
 </html>
