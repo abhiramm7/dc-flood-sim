@@ -9,7 +9,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N8AOPass } from './vendor/N8AO.m.js';
-import { GPUFloodSim } from './sim.js?v=14';
+import { GPUFloodSim } from './sim.js?v=15';
 
 const state = {
   nx: 0, ny: 0, dx: 1,
@@ -242,20 +242,22 @@ const WATER_FS = /* glsl */`
     normal = normalize(normal +
       vec3(ripple * 0.20, 0.0, ripple * 0.20) * clamp(vDepth, 0.3, 1.0));
 
-    // Blue water, darkening with depth.
-    float dN = clamp(vDepth / 6.0, 0.0, 1.0);
-    vec3 shallowWater = vec3(0.16, 0.38, 0.48);
-    vec3 deepWater    = vec3(0.015, 0.07, 0.16);
+    // Blue water, darkening with depth (deep stays clearly blue, not black —
+    // from straight above there is no fresnel reflection to lift it).
+    float dN = clamp(vDepth / 8.0, 0.0, 1.0);
+    vec3 shallowWater = vec3(0.18, 0.42, 0.52);
+    vec3 deepWater    = vec3(0.05, 0.15, 0.30);
     vec3 base = mix(shallowWater, deepWater, sqrt(dN));
 
     float diff = max(dot(normal, sunDir), 0.0);
     vec3 view = normalize(viewerPos - vWorldPos);
     vec3 H = normalize(sunDir + view);
     float spec = pow(max(dot(normal, H), 0.0), 120.0);
-    vec3 color = base * (0.45 + 0.60 * diff);
+    vec3 color = base * (0.55 + 0.50 * diff);
+    color += skyTint * 0.10;             // diffuse skylight at any view angle
     color += vec3(1.0, 0.97, 0.90) * spec * 0.4;
 
-    // Grazing angles pick up the sky.
+    // Grazing angles pick up more of the sky.
     float fres = pow(1.0 - max(dot(normal, view), 0.0), 4.0);
     color = mix(color, skyTint * 0.7, fres * 0.45);
 

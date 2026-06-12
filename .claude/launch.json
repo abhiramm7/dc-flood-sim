@@ -4,7 +4,7 @@
     {
       "name": "flood-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8901", "--directory", "docs"],
+      "runtimeArgs": ["scripts/dev_server.py", "8901"],
       "port": 8901
     }
   ]
